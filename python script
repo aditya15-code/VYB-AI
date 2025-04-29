@@ -1,0 +1,111 @@
+import json
+
+# Mock databases
+nutrition_db = {
+    "paneer": {"calories": 265, "protein": 18.3, "carbs": 1.2, "fat": 20.8},
+    "butter": {"calories": 717, "protein": 0.9, "carbs": 0.1, "fat": 81},
+    "tomato": {"calories": 18, "protein": 0.9, "carbs": 3.9, "fat": 0.2},
+    "onion": {"calories": 40, "protein": 1.1, "carbs": 9.3, "fat": 0.1},
+    "cream": {"calories": 340, "protein": 2, "carbs": 3, "fat": 36}
+}
+
+conversion_table = {
+    "cup cubes": 120,       # paneer
+    "teaspoons": 5,         # butter
+    "cup puree": 100,       # tomato
+    "cup chopped": 80,      # onion
+    "tablespoon": 15        # cream
+}
+
+dish_categories = {
+    "paneer butter masala": "Wet Sabzi",
+    "dal tadka": "Dal",
+    "chicken curry": "Non-Veg Curry"
+}
+
+def fetch_recipe(dish_name):
+    recipes = {
+        "paneer butter masala": [
+            {"ingredient": "Paneer", "quantity": "0.75 cup cubes"},
+            {"ingredient": "Butter", "quantity": "2 teaspoons"},
+            {"ingredient": "Tomato", "quantity": "0.5 cup puree"},
+            {"ingredient": "Onion", "quantity": "0.5 cup chopped"},
+            {"ingredient": "Cream", "quantity": "1 tablespoon"}
+        ]
+    }
+    return recipes.get(dish_name.lower(), [])
+
+def normalize_ingredients(ingredients):
+    normalized = []
+    for item in ingredients:
+        ing = item["ingredient"].strip().lower()
+        qty_text = item["quantity"].lower()
+        for unit in conversion_table:
+            if unit in qty_text:
+                try:
+                    qty = float(qty_text.split()[0])
+                except:
+                    qty = 1
+                normalized.append({"ingredient": ing, "quantity": qty, "unit": unit})
+                break
+    return normalized
+
+def map_to_nutrition_db(ingredients, db):
+    mapped = []
+    for item in ingredients:
+        ing = item["ingredient"]
+        matched_key = next((k for k in db if k in ing), None)
+        if matched_key:
+            item["db_key"] = matched_key
+            mapped.append(item)
+    return mapped
+
+def convert_to_grams(ingredients, conversion_table):
+    for item in ingredients:
+        grams = item["quantity"] * conversion_table.get(item["unit"], 0)
+        item["grams"] = grams
+    return ingredients
+
+def calculate_nutrition(ingredients, nutrition_db):
+    totals = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
+    for item in ingredients:
+        db_key = item["db_key"]
+        grams = item["grams"]
+        for nutrient in totals:
+            totals[nutrient] += (grams / 100) * nutrition_db[db_key][nutrient]
+    return totals
+
+def classify_dish(dish_name):
+    return dish_categories.get(dish_name.lower(), "Unknown")
+
+def extrapolate_per_serving(nutrition_totals, total_weight, serving_weight=180):
+    scale = serving_weight / total_weight if total_weight else 1
+    return {k: round(v * scale, 2) for k, v in nutrition_totals.items()}
+
+def estimate_total_weight(ingredients):
+    return sum(item.get("grams", 0) for item in ingredients)
+
+# 🚀 Main Pipeline
+def estimate_dish_nutrition(dish_name):
+    recipe = fetch_recipe(dish_name)
+    if not recipe:
+        return {"error": "Recipe not found"}
+
+    normalized = normalize_ingredients(recipe)
+    mapped = map_to_nutrition_db(normalized, nutrition_db)
+    with_grams = convert_to_grams(mapped, conversion_table)
+    total_weight = estimate_total_weight(with_grams)
+    nutrition = calculate_nutrition(with_grams, nutrition_db)
+    per_serving = extrapolate_per_serving(nutrition, total_weight)
+    dish_type = classify_dish(dish_name)
+
+    return {
+        "estimated_nutrition_per_200ml_katori": per_serving,
+        "dish_type": dish_type,
+        "ingredients_used": recipe
+    }
+
+# 🎯 Test Example
+if __name__ == "__main__":
+    result = estimate_dish_nutrition("Paneer Butter Masala")
+    print(json.dumps(result, indent=2))
